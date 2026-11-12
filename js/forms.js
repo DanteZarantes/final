@@ -71,6 +71,16 @@
       showError(field, "Tell us a little more — at least 10 characters.");
       return false;
     }
+    if (type === "password") {
+      if (val.length < 8) {
+        showError(field, "Use at least 8 characters.");
+        return false;
+      }
+      if (!/[0-9]/.test(val)) {
+        showError(field, "Include at least one number.");
+        return false;
+      }
+    }
     if (type === "date") {
       var picked = new Date(val + "T00:00:00");
       var today = new Date();
@@ -133,6 +143,13 @@
         return;
       }
 
+      var values = {};
+      for (var v = 0; v < fields.length; v++) {
+        if (fields[v].id) {
+          values[fields[v].id] = fields[v].type === "checkbox" ? fields[v].checked : fields[v].value;
+        }
+      }
+
       if (successEl) {
         var custom = form.getAttribute("data-success");
         successEl.innerHTML = '<span aria-hidden="true">✓</span> ' +
@@ -151,7 +168,7 @@
       }
 
       document.dispatchEvent(new CustomEvent("form:success", {
-        detail: { form: form.id || "" }
+        detail: { form: form.id || "", values: values }
       }));
 
       if (successEl) {
