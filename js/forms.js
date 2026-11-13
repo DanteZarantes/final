@@ -4,6 +4,45 @@
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   var PHONE_RE = /^\+?[0-9\s().-]{7,20}$/;
 
+  var NAME_WORD_RE = /^\p{L}+(?:['\u2019.-]\p{L}+)*\.?$/u;
+  var FAKE_NAMES = ["test", "tester", "asdf", "qwerty", "admin", "user", "name", "fullname", "firstname", "lastname", "abc", "xyz", "none", "null", "unknown", "anonymous"];
+
+  function checkRealName(val) {
+    var clean = val.replace(/\s+/g, " ").trim();
+    if (/[0-9_@#$%^&*()+=<>\/\\|{}\[\]~`!?,;:"]/.test(clean)) {
+      return "Names can only contain letters, spaces, hyphens and apostrophes.";
+    }
+    var words = clean.split(" ");
+    if (words.length < 2) {
+      return "Enter your first and last name.";
+    }
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (!NAME_WORD_RE.test(w)) {
+        return "Enter a real name using letters only, like Jane Wanderer.";
+      }
+      var letters = w.replace(/[^\p{L}]/gu, "");
+      var isInitial = letters.length === 1 && w.slice(-1) === ".";
+      if (letters.length < 2 && !isInitial) {
+        return "Each part of your name needs at least 2 letters.";
+      }
+      if (/(\p{L})\1\1/iu.test(letters)) {
+        return "That doesn't look like a real name. Please check the spelling.";
+      }
+      if (FAKE_NAMES.indexOf(letters.toLowerCase()) !== -1) {
+        return "Please enter your real name.";
+      }
+    }
+    var realParts = 0;
+    for (var j = 0; j < words.length; j++) {
+      if (words[j].replace(/[^\p{L}]/gu, "").length >= 2) realParts++;
+    }
+    if (realParts < 2) {
+      return "Enter your first and last name in full.";
+    }
+    return "";
+  }
+
   function errorBox(field) {
     var holder = field.closest(".mb-3, .form-group, .field");
     if (!holder) holder = field.parentNode;
@@ -63,9 +102,12 @@
       showError(field, "Enter a valid phone number (7–20 digits).");
       return false;
     }
-    if (type === "name" && val.length < 2) {
-      showError(field, "Please enter at least 2 characters.");
-      return false;
+    if (type === "name") {
+      var nameError = checkRealName(val);
+      if (nameError) {
+        showError(field, nameError);
+        return false;
+      }
     }
     if (type === "message" && val.length < 10) {
       showError(field, "Tell us a little more — at least 10 characters.");
@@ -107,13 +149,20 @@
       showError(field, "Please confirm to continue.");
       return false;
     }
+    if (field.hasAttribute("data-ext-error")) {
+      showError(field, field.getAttribute("data-ext-error"));
+      return false;
+    }
 
     clearError(field);
     return true;
   }
 
+  var handlers = {};
+
   function wireForm(form) {
-    if (!form) return;
+    if (!form || form.getAttribute("data-wired") === "1") return;
+    form.setAttribute("data-wired", "1");
     var fields = form.querySelectorAll("[data-rule], [data-required]");
     var successEl = form.querySelector(".form-success");
 
@@ -126,6 +175,14 @@
         f.addEventListener("blur", function () { validateField(f); });
       })(fields[i]);
     }
+
+    form.addEventListener("input", function () {
+      var flagged = form.querySelectorAll("[data-ext-error]");
+      for (var x = 0; x < flagged.length; x++) {
+        flagged[x].removeAttribute("data-ext-error");
+        validateField(flagged[x]);
+      }
+    });
 
     form.addEventListener("submit", function (e) {
       e.preventDefault();
@@ -150,9 +207,24 @@
         }
       }
 
+      var handler = handlers[form.id];
+      if (handler) {
+        var outcome = handler(values);
+        if (outcome && outcome.ok === false) {
+          var badField = document.getElementById(outcome.field);
+          if (successEl) successEl.classList.remove("show");
+          if (badField) {
+            badField.setAttribute("data-ext-error", outcome.error);
+            showError(badField, outcome.error);
+            badField.focus();
+          }
+          return;
+        }
+      }
+
       if (successEl) {
         var custom = form.getAttribute("data-success");
-        successEl.innerHTML = '<span aria-hidden="true">✓</span> ' +
+        successEl.innerHTML = '<i class="bi bi-check-circle-fill" aria-hidden="true"></i> ' +
           (custom || "Thanks! We'll be in touch shortly.");
         successEl.classList.add("show");
       }
@@ -188,6 +260,11 @@
       sel.appendChild(opt);
     });
   }
+
+  window.NomadForms = {
+    wire: wireForm,
+    handle: function (formId, fn) { handlers[formId] = fn; }
+  };
 
   document.addEventListener("DOMContentLoaded", function () {
     populateTripSelect();

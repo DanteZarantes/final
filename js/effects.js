@@ -31,7 +31,7 @@
 
     function toast(msg, kind) {
       var $t = $('<div class="toast-note"></div>')
-        .addClass(kind === "success" ? "toast-success" : "")
+        .addClass(kind === "success" ? "toast-success" : kind === "warn" ? "toast-warn" : "")
         .text(msg)
         .hide()
         .appendTo($toastStack)
@@ -91,7 +91,7 @@
       });
     }
 
-    var $toTop = $('<button class="back-to-top" aria-label="Back to top" title="Back to top">↑</button>').appendTo("body");
+    var $toTop = $('<button class="back-to-top" aria-label="Back to top" title="Back to top"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>').appendTo("body");
     $toTop.on("click", function () {
       $("html, body").stop(true).animate({ scrollTop: 0 }, 400);
     });
@@ -157,7 +157,7 @@
       $(this).css("transform", "");
     });
 
-    $(document).on("click", ".btn-clay, .btn-ghost, .qty-btn", function (e) {
+    $(document).on("click", ".btn-clay, .btn-ghost", function (e) {
       var $btn = $(this);
       if ($btn.css("position") === "static") $btn.css("position", "relative");
       $btn.css("overflow", "hidden");
@@ -171,15 +171,10 @@
       window.setTimeout(function () { $ink.remove(); }, 600);
     });
 
-    $(".accordion-button").on("click", function () {
-      var $icon = $(this).find(".acc-icon");
-      $(".accordion-button .acc-icon").not($icon).removeClass("open");
-      $icon.toggleClass("open");
-    });
-
     var cartTimer = null, lastCount = null;
     document.addEventListener("cart:change", function (e) {
       var count = e.detail.count;
+      if (e.detail.silent) { lastCount = count; return; }
       $("[data-cart-count]").closest("a, span").stop(true, true);
       $(".cart-total .ct-value").addClass("pulse");
       window.setTimeout(function () { $(".cart-total .ct-value").removeClass("pulse"); }, 420);
@@ -193,7 +188,30 @@
       lastCount = count;
     });
 
-    document.addEventListener("form:success", function () {
+    var dupTimer = null;
+    document.addEventListener("cart:duplicate", function (e) {
+      clearTimeout(dupTimer);
+      dupTimer = setTimeout(function () {
+        toast(e.detail.name + " is already selected.", "warn");
+      }, 80);
+    });
+
+    var lastUserEmail;
+    document.addEventListener("auth:change", function (e) {
+      var user = e.detail && e.detail.user;
+      var email = user ? user.email : null;
+      if (email === lastUserEmail) return;
+      lastUserEmail = email;
+      if (user) {
+        toast("Welcome, " + user.name.split(" ")[0] + ". Your selected trips are saved to your account.", "success");
+      } else {
+        toast("You have been logged out.", "success");
+      }
+    });
+
+    document.addEventListener("form:success", function (e) {
+      var id = e.detail && e.detail.form;
+      if (id === "loginForm" || id === "signupForm") return;
       toast("Message sent — thanks for reaching out!", "success");
     });
 

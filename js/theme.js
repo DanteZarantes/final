@@ -24,7 +24,7 @@
       btn.title = "Switch to " + next + " mode";
       var icon = btn.querySelector(".ti");
       var label = btn.querySelector(".tl");
-      if (icon) icon.textContent = isLight ? "☀️" : "🌙";
+      if (icon) icon.className = "ti bi " + (isLight ? "bi-sun-fill" : "bi-moon-stars-fill");
       if (label) label.textContent = isLight ? "Light" : "Dark";
     }
   }

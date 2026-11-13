@@ -42,7 +42,12 @@
   function loadCart() {
     try {
       var raw = localStorage.getItem(CART_KEY);
-      return raw ? JSON.parse(raw) : {};
+      var parsed = raw ? JSON.parse(raw) : {};
+      var capped = {};
+      for (var key in parsed) {
+        if (parsed.hasOwnProperty(key) && parsed[key] > 0) capped[key] = 1;
+      }
+      return capped;
     } catch (e) {
       return {};
     }
@@ -52,11 +57,33 @@
   }
 
   function addToCart(id) {
-    if (!tripById(id)) return;
-    cart[id] = (cart[id] || 0) + 1;
+    var trip = tripById(id);
+    if (!trip) return;
+    if (cart[id]) {
+      document.dispatchEvent(new CustomEvent("cart:duplicate", {
+        detail: { id: id, name: trip.name }
+      }));
+      return;
+    }
+    cart[id] = 1;
     saveCart();
     renderCart();
     emitCartChange();
+  }
+
+  function refreshAddButtons() {
+    var buttons = document.querySelectorAll("[data-add]");
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      var selected = !!cart[btn.getAttribute("data-add")];
+      btn.classList.toggle("is-selected", selected);
+      var label = btn.querySelector(".add-label");
+      if (label) {
+        label.textContent = selected ? "Selected" : btn.getAttribute("data-label") || "Add";
+      }
+      var icon = btn.querySelector("i");
+      if (icon) icon.className = "bi " + (selected ? "bi-bag-check-fill" : "bi-bag-plus");
+    }
   }
   function setQty(id, qty) {
     if (qty <= 0) { delete cart[id]; }
@@ -79,11 +106,37 @@
     }
     return total;
   }
-  function emitCartChange() {
+  function emitCartChange(silent) {
     document.dispatchEvent(new CustomEvent("cart:change", {
-      detail: { count: cartCount(), total: cartTotal() }
+      detail: { count: cartCount(), total: cartTotal(), silent: !!silent }
     }));
   }
+
+  function cartIds() {
+    var ids = [];
+    for (var id in cart) {
+      if (cart.hasOwnProperty(id) && tripById(id)) ids.push(id);
+    }
+    return ids;
+  }
+
+  function replaceCart(ids) {
+    var next = {};
+    for (var i = 0; i < ids.length; i++) {
+      if (tripById(ids[i])) next[ids[i]] = 1;
+    }
+    cart = next;
+    saveCart();
+    renderCart();
+    emitCartChange(true);
+  }
+
+  window.addEventListener("storage", function (e) {
+    if (e.key !== CART_KEY) return;
+    cart = loadCart();
+    renderCart();
+    emitCartChange(true);
+  });
 
   window.NomadTrails.getCart = function () {
     var out = [];
@@ -95,6 +148,8 @@
     return out;
   };
   window.NomadTrails.cartTotal = cartTotal;
+  window.NomadTrails.getCartIds = cartIds;
+  window.NomadTrails.setCartIds = replaceCart;
   window.NomadTrails.clearCart = function () {
     cart = {};
     saveCart();
@@ -110,6 +165,7 @@
     for (var i = 0; i < countEls.length; i++) {
       countEls[i].textContent = String(cartCount());
     }
+    refreshAddButtons();
     if (!list) return;
 
     list.innerHTML = "";
@@ -136,41 +192,20 @@
       name.textContent = t.name;
       var meta = document.createElement("div");
       meta.className = "ci-meta";
-      meta.textContent = money(t.price) + " × " + qty + " = " + money(t.price * qty);
+      meta.textContent = t.days + " days · " + money(t.price * qty);
       info.appendChild(name);
       info.appendChild(meta);
 
       var controls = document.createElement("div");
       controls.className = "ci-controls";
 
-      var minus = document.createElement("button");
-      minus.type = "button";
-      minus.className = "qty-btn";
-      minus.textContent = "−";
-      minus.setAttribute("aria-label", "Remove one " + t.name);
-      minus.addEventListener("click", function () { setQty(id, qty - 1); });
-
-      var val = document.createElement("span");
-      val.className = "qty-val";
-      val.textContent = String(qty);
-
-      var plus = document.createElement("button");
-      plus.type = "button";
-      plus.className = "qty-btn";
-      plus.textContent = "+";
-      plus.setAttribute("aria-label", "Add one " + t.name);
-      plus.addEventListener("click", function () { setQty(id, qty + 1); });
-
       var remove = document.createElement("button");
       remove.type = "button";
       remove.className = "ci-remove";
-      remove.innerHTML = "&times;";
+      remove.innerHTML = '<i class="bi bi-trash3" aria-hidden="true"></i>';
       remove.setAttribute("aria-label", "Remove " + t.name + " from selection");
       remove.addEventListener("click", function () { setQty(id, 0); });
 
-      controls.appendChild(minus);
-      controls.appendChild(val);
-      controls.appendChild(plus);
       controls.appendChild(remove);
 
       li.appendChild(info);
@@ -226,7 +261,7 @@
         var empty = document.createElement("div");
         empty.className = "empty-state";
         empty.setAttribute("role", "status");
-        empty.innerHTML = '<span class="emoji" aria-hidden="true">🧭</span>' +
+        empty.innerHTML = '<span class="emoji" aria-hidden="true"><i class="bi bi-compass"></i></span>' +
           "<p class=\"mb-2\">No expeditions match your search.</p>" +
           '<button type="button" class="btn btn-ghost" id="clearFilters">Clear filters</button>';
         grid.appendChild(empty);
@@ -238,6 +273,7 @@
       list.forEach(function (t) {
         grid.appendChild(buildCard(t));
       });
+      refreshAddButtons();
     }
 
     function buildCard(t) {
@@ -288,7 +324,8 @@
       var addBtn = document.createElement("button");
       addBtn.type = "button";
       addBtn.className = "btn btn-clay w-100 add-btn";
-      addBtn.textContent = "Add to selection";
+      addBtn.innerHTML = '<i class="bi bi-bag-plus" aria-hidden="true"></i> <span class="add-label">Add to selection</span>';
+      addBtn.setAttribute("data-label", "Add to selection");
       addBtn.setAttribute("data-add", t.id);
       addBtn.addEventListener("click", function () {
         addToCart(t.id);
@@ -389,7 +426,9 @@
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "btn btn-ghost btn-sm add-btn";
-        btn.textContent = "Add";
+        btn.innerHTML = '<i class="bi bi-bag-plus" aria-hidden="true"></i> <span class="add-label">Add</span>';
+        btn.setAttribute("data-label", "Add");
+        btn.setAttribute("data-add", t.id);
         btn.setAttribute("aria-label", "Add " + t.name + " to selection");
         btn.addEventListener("click", function () { addToCart(t.id); });
         action.appendChild(btn);
@@ -403,6 +442,7 @@
         tr.appendChild(action);
         tbody.appendChild(tr);
       });
+      refreshAddButtons();
     }
 
     var heads = document.querySelectorAll(".trips-table thead th.sortable");
